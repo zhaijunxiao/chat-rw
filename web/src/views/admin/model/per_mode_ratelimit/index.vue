@@ -8,16 +8,17 @@ import { HoverButton, SvgIcon } from '@/components/common'
 import { t } from '@/locales'
 
 interface RowData {
-  ID: string
-  ChatModelName: string
-  FullName: string
-  UserEmail: string
-  RateLimit: string
+  id: string
+  chatModelName: string
+  fullName: string
+  userEmail: string
+  rateLimit: string
 }
 
 const dialogVisible = ref(false)
 
 const data = ref<RowData[]>([])
+const loading = ref(true)
 
 onMounted(async () => {
   refreshData()
@@ -25,43 +26,44 @@ onMounted(async () => {
 
 async function refreshData() {
   data.value = await ListUserChatModelPrivilege()
+  loading.value = false
 }
 
 function UpdateRow(row: RowData) {
   // @ts-expect-error rateLimit is a number in golang
-  row.RateLimit = parseInt(row.RateLimit)
-  UpdateUserChatModelPrivilege(row.ID, row)
+  row.rateLimit = parseInt(row.rateLimit)
+  UpdateUserChatModelPrivilege(row.id, row)
 }
 
 function createColumns(): DataTableColumns<RowData> {
   const userEmailField = {
     title: t('admin.per_model_rate_limit.UserEmail'),
-    key: 'UserEmail',
+    key: 'userEmail',
     width: 200,
   }
 
   const userFullNameField = {
     title: t('admin.per_model_rate_limit.FullName'),
-    key: 'FullName',
+    key: 'fullName',
     width: 200,
   }
 
   const modelField = {
     title: t('admin.per_model_rate_limit.ChatModelName'),
-    key: 'ChatModelName',
+    key: 'chatModelName',
     width: 250,
   }
 
   const ratelimitField = {
     title: t('admin.per_model_rate_limit.RateLimit'),
-    key: 'RateLimit',
+    key: 'rateLimit',
     width: 250,
     render(row: RowData, index: number) {
       return h(NInput, {
-        value: row.RateLimit,
+        value: row.rateLimit,
         onUpdateValue(v: string) {
           // assuming that `data` is an array of FormData objects
-          data.value[index].RateLimit = v
+          data.value[index].rateLimit = v
           UpdateRow(data.value[index])
         },
       })
@@ -123,6 +125,6 @@ async function newRowAdded() {
         </span>
       </HoverButton>
     </div>
-    <NDataTable :columns="columns" :data="data" />
+    <NDataTable :columns="columns" :data="data" :loading="loading" />
   </div>
 </template>

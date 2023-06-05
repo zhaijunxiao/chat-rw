@@ -45,11 +45,11 @@ func (h *UserChatModelPrivilegeHandler) Register(r *mux.Router) {
 }
 
 type ChatModelPrivilege struct {
-	ID            int32
-	FullName      string
-	UserEmail     string
-	ChatModelName string
-	RateLimit     int32
+	ID            int32  `json:"id"`
+	FullName      string `json:"fullName"`
+	UserEmail     string `json:"userEmail"`
+	ChatModelName string `json:"chatModelName"`
+	RateLimit     int32  `json:"rateLimit"`
 }
 
 func (h *UserChatModelPrivilegeHandler) ListUserChatModelPrivileges(w http.ResponseWriter, r *http.Request) {

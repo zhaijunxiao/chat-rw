@@ -2,8 +2,10 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { v4 as uuidv4 } from 'uuid'
 import { useRoute } from 'vue-router'
-import { NButton, NInput, NModal, useDialog, useMessage } from 'naive-ui'
+import { NAutoComplete, NButton, NInput, NModal, useDialog, useMessage } from 'naive-ui'
+import { storeToRefs } from 'pinia'
 import html2canvas from 'html2canvas'
+import { type OnSelect } from 'naive-ui/es/auto-complete/src/interface'
 import { Message } from './components'
 import { useScroll } from './hooks/useScroll'
 import { useChat } from './hooks/useChat'
@@ -13,7 +15,7 @@ import SessionConfig from './components/Session/SessionConfig.vue'
 import { createChatSnapshot, fetchChatStream, updateChatData } from '@/api'
 import { HoverButton, SvgIcon } from '@/components/common'
 import { useBasicLayout } from '@/hooks/useBasicLayout'
-import { useChatStore } from '@/store'
+import { useChatStore, usePromptStore } from '@/store'
 import { t } from '@/locales'
 import { genTempDownloadLink } from '@/utils/download'
 let controller = new AbortController()
@@ -39,6 +41,60 @@ const prompt = ref<string>('')
 const loading = ref<boolean>(false)
 
 const showModal = ref<boolean>(false)
+
+// 添加PromptStore
+const promptStore = usePromptStore()
+
+// 使用storeToRefs，保证store修改后，联想部分能够重新渲染
+const { promptList: promptTemplate } = storeToRefs<any>(promptStore)
+
+// 可优化部分
+// 搜索选项计算，这里使用value作为索引项，所以当出现重复value时渲染异常(多项同时出现选中效果)
+// 理想状态下其实应该是key作为索引项,但官方的renderOption会出现问题，所以就需要value反renderLabel实现
+const searchOptions = computed(() => {
+  function filterItemsByPrompt(item: { key: string }): boolean {
+    const lowerCaseKey = item.key.toLowerCase()
+    const lowerCasePrompt = prompt.value.substring(1).toLowerCase()
+    return lowerCaseKey.includes(lowerCasePrompt)
+  }
+  function filterItemsByTitle(item: { title: string }): boolean {
+    const lowerCaseKey = item.title.toLowerCase()
+    const lowerCasePrompt = prompt.value.substring(1).toLowerCase()
+    return lowerCaseKey.includes(lowerCasePrompt)
+  }
+  if (prompt.value.startsWith('/')) {
+    const filterStores = chatStore.history.filter(filterItemsByTitle).map((obj: { uuid: any }) => {
+      return {
+        label: `UUID|$|${obj.uuid}`,
+        value: `UUID|$|${obj.uuid}`,
+      }
+    })
+
+    const filterPrompts = promptTemplate.value.filter(filterItemsByPrompt).map((obj: { value: any }) => {
+      return {
+        label: obj.value,
+        value: obj.value,
+      }
+    })
+    const all = filterStores.concat(filterPrompts)
+    return all
+  }
+  else {
+    return []
+  }
+})
+// value反渲染key
+const renderOption = (option: { label: string }) => {
+  for (const i of promptTemplate.value) {
+    if (i.value === option.label)
+      return [i.key]
+  }
+  for (const chat of chatStore.history) {
+    if (`UUID|$|${chat.uuid}` === option.label)
+      return [chat.title]
+  }
+  return []
+}
 
 function handleSubmit() {
   onConversationStream()
@@ -407,6 +463,13 @@ function handleStop() {
   }
 }
 
+const handleSelectAutoComplete: OnSelect = function (v: string | number) {
+  if (typeof v === 'string' && v.startsWith('UUID|$|')) {
+    // set active session to the selected uuid
+    chatStore.setActive(v.split('|$|')[1])
+  }
+}
+
 const placeholder = computed(() => {
   if (isMobile.value)
     return t('chat.placeholderMobile')
@@ -426,6 +489,8 @@ const footerClass = computed(() => {
 
 onMounted(() => {
   scrollToBottom()
+  // init default prompts
+  promptStore.getPromptList()
 })
 
 onUnmounted(() => {
@@ -467,9 +532,9 @@ function getDataFromResponseText(responseText: string): string {
             <div>
               <Message
                 v-for="(item, index) of dataSources" :key="index" class="chat-message" :date-time="item.dateTime"
-                :model="chatSession?.model" :text="item.text" :inversion="item.inversion" :error="item.error" :is-prompt="item.isPrompt" :is-pin="item.isPin"
-                :loading="item.loading" :pining="pining" :index="index" @regenerate="onRegenerate(index)" @delete="handleDelete(index)"
-                @toggle-pin="handleTogglePin(index)"
+                :model="chatSession?.model" :text="item.text" :inversion="item.inversion" :error="item.error"
+                :is-prompt="item.isPrompt" :is-pin="item.isPin" :loading="item.loading" :pining="pining" :index="index"
+                @regenerate="onRegenerate(index)" @delete="handleDelete(index)" @toggle-pin="handleTogglePin(index)"
                 @after-edit="handleAfterEdit"
               />
               <div class="sticky bottom-0 left-0 flex justify-center">
@@ -499,7 +564,10 @@ function getDataFromResponseText(responseText: string): string {
             </span>
           </HoverButton>
 
-          <HoverButton data-testid="snpashot-button" v-if="!isMobile" :tooltip="$t('chat.chatSnapshot')" @click="handleSnapshot">
+          <HoverButton
+            v-if="!isMobile" data-testid="snpashot-button" :tooltip="$t('chat.chatSnapshot')"
+            @click="handleSnapshot"
+          >
             <span class="text-xl text-[#4b9e5f] dark:text-white">
               <SvgIcon icon="ic:twotone-ios-share" />
             </span>
@@ -510,10 +578,18 @@ function getDataFromResponseText(responseText: string): string {
               <SvgIcon icon="teenyicons:adjust-horizontal-solid" />
             </span>
           </HoverButton>
-          <NInput
-            id="message_textarea" v-model:value="prompt" data-testid="message_textarea" type="textarea"
-            :autosize="{ minRows: 1, maxRows: isMobile ? 4 : 8 }" :placeholder="placeholder" @keypress="handleEnter"
-          />
+          <NAutoComplete
+            v-model:value="prompt" :options="searchOptions" :render-label="renderOption"
+            :on-select="handleSelectAutoComplete"
+          >
+            <template #default="{ handleInput, handleBlur, handleFocus }">
+              <NInput
+                id="message_textarea" v-model:value="prompt" type="textarea" :placeholder="placeholder"
+                data-testid="message_textarea" :autosize="{ minRows: 1, maxRows: isMobile ? 4 : 8 }" @input="handleInput"
+                @focus="handleFocus" @blur="handleBlur" @keypress="handleEnter"
+              />
+            </template>
+          </NAutoComplete>
           <NButton
             id="send_message_button" data-testid="send_message_button" type="primary" :disabled="buttonDisabled"
             @click="handleSubmit"

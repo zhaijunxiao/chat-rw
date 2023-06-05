@@ -1,6 +1,6 @@
 declare namespace Chat {
 
-	interface Chat {
+	interface Message {
 		uuid: string,
 		dateTime: string
 		text: string
@@ -11,7 +11,7 @@ declare namespace Chat {
 		isPin?: boolean
 	}
 
-	interface History {
+	interface Session {
 		uuid: string
 		title: string
 		isEdit: boolean
@@ -26,8 +26,8 @@ declare namespace Chat {
 
 	interface ChatState {
 		active: string | null
-		history: History[]
-		chat: { uuid: string; data: Chat[] }[]
+		history: Session[]
+		chat: { uuid: string; data: Message[] }[]
 	}
 
 	interface ConversationRequest {
@@ -51,5 +51,21 @@ declare namespace Chat {
 		parentMessageId: string
 		role: string
 		text: string
+	}
+
+	interface ChatModel {
+		id?: number
+		apiAuthHeader: string
+		apiAuthKey: string
+		isDefault: boolean
+		label: string
+		name: string
+		url: string
+		enablePerModeRatelimit: boolean,
+		maxToken?: number, 
+		defaultToken?: number,
+		orderNumber?: string,
+		httpTimeOut?: number
+
 	}
 }

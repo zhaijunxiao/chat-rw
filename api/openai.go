@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/samber/lo"
 	openai "github.com/sashabaranov/go-openai"
@@ -33,7 +34,7 @@ func getModelBaseUrl(apiUrl string) (string, error) {
 	return fmt.Sprintf("%s://%s/%s", parsedUrl.Scheme, parsedUrl.Host, version), nil
 }
 
-func configOpenAIProxy(config openai.ClientConfig) {
+func configOpenAIProxy(config *openai.ClientConfig) {
 	proxyUrlStr := appConfig.OPENAI.PROXY_URL
 	if proxyUrlStr != "" {
 		proxyUrl, err := url.Parse(proxyUrlStr)
@@ -45,6 +46,7 @@ func configOpenAIProxy(config openai.ClientConfig) {
 		}
 		config.HTTPClient = &http.Client{
 			Transport: transport,
+			Timeout:   120 * time.Second,
 		}
 	}
 }
@@ -58,12 +60,20 @@ func genOpenAIConfig(chatModel sqlc_queries.ChatModel) (openai.ClientConfig, err
 
 	var config openai.ClientConfig
 	if os.Getenv("AZURE_RESOURCE_NAME") != "" {
-		config = openai.DefaultAzureConfig(token, chatModel.Url, os.Getenv("AZURE_RESOURCE_NAME"))
+		config = openai.DefaultAzureConfig(token, chatModel.Url)
+		config.AzureModelMapperFunc = func(model string) string {
+			azureModelMapping := map[string]string{
+				"gpt-3.5-turbo": os.Getenv("AZURE_RESOURCE_NAME"),
+			}
+			return azureModelMapping[model]
+		}
 	} else {
 		config = openai.DefaultConfig(token)
 		config.BaseURL = baseUrl
+		// two minutes timeout
+		config.HTTPClient.Timeout = 120 * time.Second
 
-		configOpenAIProxy(config)
+		configOpenAIProxy(&config)
 	}
 	return config, err
 }

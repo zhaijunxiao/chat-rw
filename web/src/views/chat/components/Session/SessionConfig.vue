@@ -1,15 +1,34 @@
 <script lang="ts" setup>
 import type { Ref } from 'vue'
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type { FormInst } from 'naive-ui'
-import { NForm, NFormItem, NRadio, NRadioGroup, NSlider, NSpace, NSwitch } from 'naive-ui'
+import { NForm, NFormItem, NRadio, NRadioGroup, NSlider, NSpace, NSpin, NSwitch } from 'naive-ui'
 import { debounce } from 'lodash-es'
 import { useChatStore } from '@/store'
 import { fetchChatModel } from '@/api'
 
+import {  useQuery } from "@tanstack/vue-query";
+
+const optiomFromModel = (model: any) => {
+  return {
+    label: model.label,
+    value: model.name,
+  }
+}
 const props = defineProps<{
   uuid: string
 }>()
+
+
+const { data, isLoading } = useQuery({
+  queryKey: ['chat_models'],
+  queryFn: fetchChatModel,
+  staleTime: 10 * 60 * 1000,
+})
+
+const chatModelOptions = computed(() => 
+  data?.value ? data.value.map(optiomFromModel) : []
+)
 
 const chatStore = useChatStore()
 
@@ -29,7 +48,7 @@ const modelRef: Ref<ModelType> = ref({
   chatModel: session.value?.model ?? 'gpt-3.5-turbo',
   contextCount: session.value?.maxLength ?? 4,
   temperature: session.value?.temperature ?? 1.0,
-  maxTokens: session.value?.maxTokens ?? 512,
+  maxTokens: session.value?.maxTokens ?? 2048,
   topP: session.value?.topP ?? 1.0,
   n: session.value?.n ?? 1,
   debug: session.value?.debug ?? false,
@@ -54,25 +73,19 @@ watch(modelRef, async (modelValue: ModelType) => {
   debouneUpdate(modelValue)
 }, { deep: true })
 
-const chatModelOptions: any[] = reactive([])
 
-onMounted(async () => {
-  const models = await fetchChatModel()
-  chatModelOptions.push(...models.map((model: any) => {
-    return {
-      label: model.Label,
-      value: model.Name,
-    }
-  }))
-})
 
 const tokenUpperLimit = computed(() => {
   if (modelRef.value.chatModel === 'gpt-4')
     return Math.floor(1024 * 8)
   else if (modelRef.value.chatModel === 'gpt-4-32k')
     return Math.floor(32 * 1024)
+  else if (modelRef.value.chatModel === 'gpt-3.5-turbo')
+    return Math.floor(4 * 1024)
   else if (modelRef.value.chatModel === 'text-davinci-003')
     return Math.floor(4 * 1024)
+  else if (modelRef.value.chatModel === 'claude-v1-100k')
+    return Math.floor(100 * 1024)
   else
     return Math.floor(1024 * 2)
 })
@@ -84,6 +97,7 @@ const tokenUpperLimit = computed(() => {
   <div>
     <NForm ref="formRef" :model="modelRef" size="small" label-placement="top" :label-width="20">
       <NFormItem :label="$t('chat.model')" path="chatModel">
+        <div v-if="isLoading"><NSpin size="medium" /></div>
         <NRadioGroup v-model:value="modelRef.chatModel">
           <NSpace>
             <NRadio v-for="model in chatModelOptions" :key="model.value" :value="model.value">
@@ -104,7 +118,8 @@ const tokenUpperLimit = computed(() => {
       <NFormItem :label="$t('chat.maxTokens', { maxTokens: modelRef.maxTokens })" path="maxTokens">
         <NSlider v-model:value="modelRef.maxTokens" :min="256" :max="tokenUpperLimit" :step="16" :tooltip="false" />
       </NFormItem>
-      <NFormItem v-if="modelRef.chatModel.startsWith('gpt') || modelRef.chatModel.includes('davinci')" :label="$t('chat.N', { n: modelRef.n })" path="n">
+      <NFormItem v-if="modelRef.chatModel.startsWith('gpt') || modelRef.chatModel.includes('davinci')"
+        :label="$t('chat.N', { n: modelRef.n })" path="n">
         <NSlider v-model:value="modelRef.n" :min="1" :max="10" :step="1" :tooltip="false" />
       </NFormItem>
       <NFormItem :label="$t('chat.debug')" path="debug">
@@ -119,9 +134,9 @@ const tokenUpperLimit = computed(() => {
       </NFormItem>
     </NForm>
     <!--
-                              <div class="center">
-                                <pre>{{ JSON.stringify(modelRef, null, 2) }} </pre>
-                              </div>
-                              -->
+                                        <div class="center">
+                                          <pre>{{ JSON.stringify(modelRef, null, 2) }} </pre>
+                                        </div>
+                                        -->
   </div>
 </template>
